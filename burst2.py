@@ -14,7 +14,7 @@ base_dir = r'D:\!summer\ygx\data'
 time_step = 0.05
 sampling_rate = 20_000
 trigger_threshold = 5
-extended_window_ms = 25  # 新增: 峰值检测后延长的时间窗口 (ms)
+extended_window_ms = 25  # 峰值检测后延长的时间窗口 (ms)
 extended_window_points = int(extended_window_ms / time_step)
 
 plt.rcParams.update({'figure.max_open_warning': 0})
@@ -63,16 +63,16 @@ wave_colors = {
 }
 
 
-# ================== 简化波形数据提取函数 ====================
+# ================== 波形数据提取函数 ====================
 def extract_waveform_data(data, t, time_window, channel):
     """提取单个通道在时间窗口内的波形数据"""
     waveform = data[t:t + time_window, channel]
     return waveform
 
 
-# ================== 简化波形可视化函数 ========================
+# ================== 波形可视化函数 ========================
 def plot_waveforms(data, t_start, t_end, file_idx, event_id, output_dir, detected_peaks):
-    """为事件创建波形网格图（简化版）"""
+
     try:
         fig, axes = plt.subplots(8, 8, figsize=(20, 20))
         event_duration_ms = (t_end - t_start) * time_step
@@ -410,4 +410,5 @@ if __name__ == '__main__':
     print(f"  Waveforms: {waveforms_output_dir}")
     print(f"  Statistics: {stats_output_dir}")
     print(f"\nAnalysis completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
     print("=" * 70)
