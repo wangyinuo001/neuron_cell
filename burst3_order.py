@@ -27,16 +27,16 @@ plt.rcParams.update({'figure.max_open_warning': 0})
 # ==================== 动态创建输出目录 =====================
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 output_base_dir = rf'D:\!summer\ygx\output\analysis_{timestamp}'
-heatmap_output_dir = os.path.join(output_base_dir, "spike_heatmaps")
+order_map_output_dir = os.path.join(output_base_dir, "spike_order_maps")  # 修改目录名
 waveforms_output_dir = os.path.join(output_base_dir, "waveforms")
 stats_output_dir = os.path.join(output_base_dir, "statistics")
 
-for path in [output_base_dir, heatmap_output_dir, waveforms_output_dir, stats_output_dir]:
+for path in [output_base_dir, order_map_output_dir, waveforms_output_dir, stats_output_dir]:
     if not os.path.exists(path):
         os.makedirs(path)
 
 print(f"Output base directory: {os.path.abspath(output_base_dir)}")
-print(f"  Heatmaps saved to: {heatmap_output_dir}")
+print(f"  Order maps saved to: {order_map_output_dir}")  # 修改输出信息
 print(f"  Waveforms saved to: {waveforms_output_dir}")
 print(f"  Statistics saved to: {stats_output_dir}")
 print(f"Analysis timestamp: {timestamp}")
@@ -49,17 +49,6 @@ print(f"  Trigger threshold: {trigger_threshold} standard deviations")
 print(f"  Extended detection window: {extended_window_ms}ms ({extended_window_points} data points)")
 print(f"  Highpass filter: {highpass_cutoff}Hz cutoff, order {filter_order}")
 print(f"  Waveform resolution: Y-axis scaled by maximum peak voltage")
-
-# ================== 热力图配色方案 ======================
-colors = [
-    (0.0, 0.0, 1.0),
-    (0.0, 1.0, 1.0),
-    (0.0, 1.0, 0.0),
-    (1.0, 1.0, 0.0),
-    (1.0, 0.5, 0.0),
-    (1.0, 0.0, 0.0),
-]
-cmap = plt.cm.colors.LinearSegmentedColormap.from_list("custom_cmap", colors, N=256)
 
 # 波形颜色方案
 wave_colors = {
@@ -111,7 +100,6 @@ def extract_waveform_data(data, t, time_window, channel):
 
 # ================== 简化波形可视化函数 ========================
 def plot_waveforms(data, t_start, t_end, file_idx, event_id, output_dir, detected_peaks):
-
     try:
         fig, axes = plt.subplots(8, 8, figsize=(20, 20))
         event_duration_ms = (t_end - t_start) * time_step
@@ -129,7 +117,6 @@ def plot_waveforms(data, t_start, t_end, file_idx, event_id, output_dir, detecte
             y_lim = 1.0
         else:
             y_lim = max_abs_val * 1.05
-
 
         # 在网格中绘制所有64个通道的波形
         for ch in range(64):
@@ -178,7 +165,7 @@ def plot_waveforms(data, t_start, t_end, file_idx, event_id, output_dir, detecte
 
 
 # ================= 文件处理函数 ========================
-def process_csv_file(csv_path, file_idx, stats_dir, heatmap_dir, wave_dir):
+def process_csv_file(csv_path, file_idx, stats_dir, order_map_dir, wave_dir):  # 修改参数名
     filename = os.path.basename(csv_path)
     print(f"\n{'=' * 70}")
     print(f"PROCESSING FILE #{file_idx}: {filename}")
@@ -254,66 +241,79 @@ def process_csv_file(csv_path, file_idx, stats_dir, heatmap_dir, wave_dir):
                     start_time_val = time_ms[event_start_t]
                     end_time_val = time_ms[event_end_t - 1]
 
-                    heatmap_data = np.full((8, 8), np.nan)
-                    for ch in range(64):
-                        if first_trigger_times[ch] != -1:
-                            i_grid, j_grid = np.unravel_index(ch, (8, 8))
-                            # 时间比例现在相对于事件的持续时间
-                            time_proportion = (first_trigger_times[ch] - event_start_t) / (event_end_t - event_start_t)
-                            heatmap_data[i_grid, j_grid] = time_proportion
+                    # 创建一个数组来存储每个通道的触发顺序
+                    trigger_order = np.full((8, 8), -1, dtype=int)  # 使用-1表示未触发
 
-                            spike_data.append({
-                                'timestamp': timestamp,
-                                'file_num': file_idx,
-                                'filename': filename,
-                                'event_id': event_count,
-                                'start_time': start_time_val,
-                                'end_time': end_time_val,
-                                'trigger_time': time_ms[first_trigger_times[ch]],
-                                'channel': ch,
-                                'grid_row': i_grid + 1,
-                                'grid_col': j_grid + 1,
-                                'time_proportion': time_proportion,
-                                'active_channels': active_channels
-                            })
+                    # 按触发时间对通道进行排序
+                    sorted_peaks = sorted(detected_peaks, key=lambda x: x[0])
 
-                    heatmap_file = None
-                    wave_file = None
+                    # 分配顺序编号
+                    for order, (peak_time, ch) in enumerate(sorted_peaks, 1):
+                        i_grid, j_grid = np.unravel_index(ch, (8, 8))
+                        trigger_order[i_grid, j_grid] = order
+
+                        spike_data.append({
+                            'timestamp': timestamp,
+                            'file_num': file_idx,
+                            'filename': filename,
+                            'event_id': event_count,
+                            'start_time': start_time_val,
+                            'end_time': end_time_val,
+                            'trigger_time': time_ms[peak_time],
+                            'channel': ch,
+                            'grid_row': i_grid + 1,
+                            'grid_col': j_grid + 1,
+                            'trigger_order': order,  # 添加触发顺序字段
+                            'active_channels': active_channels
+                        })
+
+                    # 创建顺序图而不是热力图
                     try:
-                        fig_heat, ax_heat = plt.subplots(figsize=(8, 6))
-                        heatmap = ax_heat.imshow(heatmap_data, cmap=cmap, interpolation='nearest',
-                                                 vmin=0, vmax=1, aspect='auto')
+                        fig, ax = plt.subplots(figsize=(8, 6))
 
+                        # 创建网格背景
+                        ax.imshow(np.ones((8, 8)), cmap='gray', vmin=0, vmax=1, aspect='auto', alpha=0.1)
+
+                        # 在每个格子中写入触发顺序编号
+                        for i in range(8):
+                            for j in range(8):
+                                order_val = trigger_order[i, j]
+                                if order_val != -1:  # 只显示有触发的格子
+                                    ax.text(j, i, str(order_val),
+                                            ha='center', va='center',
+                                            fontsize=12, fontweight='bold',
+                                            color='blue')
+
+                        # 添加网格线
                         for i in range(1, 8):
-                            ax_heat.axhline(i - 0.5, color='gray', linewidth=0.5, alpha=0.5)
-                            ax_heat.axvline(i - 0.5, color='gray', linewidth=0.5, alpha=0.5)
+                            ax.axhline(i - 0.5, color='gray', linewidth=0.5, alpha=0.5)
+                            ax.axvline(i - 0.5, color='gray', linewidth=0.5, alpha=0.5)
 
-                        ax_heat.set_xticks(np.arange(8))
-                        ax_heat.set_yticks(np.arange(8))
-                        ax_heat.set_xticklabels(range(1, 9))
-                        ax_heat.set_yticklabels(range(1, 9))
-                        ax_heat.set_xlabel("Electrode Column", fontsize=10)
-                        ax_heat.set_ylabel("Electrode Row", fontsize=10)
+                        ax.set_xticks(np.arange(8))
+                        ax.set_yticks(np.arange(8))
+                        ax.set_xticklabels(range(1, 9))
+                        ax.set_yticklabels(range(1, 9))
+                        ax.set_xlabel("Electrode Column", fontsize=10)
+                        ax.set_ylabel("Electrode Row", fontsize=10)
+                        ax.set_title(f"Spike Trigger Order | File {file_idx}, Event {event_count}", fontsize=12)
 
-                        ax_heat.set_title(f"Heatmap | File {file_idx}, Event {event_count}", fontsize=12)
-                        cbar = fig_heat.colorbar(heatmap, ax=ax_heat, label='Trigger Proportion')
-                        cbar.ax.tick_params(labelsize=8)
+                        order_map_file = os.path.join(order_map_dir, f"File{file_idx}_Event{event_count}.png")
+                        fig.savefig(order_map_file, dpi=150, bbox_inches='tight')
+                        plt.close(fig)
 
-                        heatmap_file = os.path.join(heatmap_dir, f"File{file_idx}_Event{event_count}.png")
-                        fig_heat.savefig(heatmap_file, dpi=150, bbox_inches='tight')
-                        plt.close(fig_heat)
-
-                        wave_file = plot_waveforms(
-                            data,
-                            event_start_t,
-                            event_end_t,
-                            file_idx,
-                            event_count,
-                            wave_dir,
-                            detected_peaks
-                        )
                     except Exception as e:
-                        print(f"    Visualization error: {str(e)}")
+                        print(f"    Order map generation error: {str(e)}")
+
+                    # 绘制波形图
+                    wave_file = plot_waveforms(
+                        data,
+                        event_start_t,
+                        event_end_t,
+                        file_idx,
+                        event_count,
+                        wave_dir,
+                        detected_peaks
+                    )
                 else:
                     event_count -= 1  # 不是有效的多峰事件，所以递减计数器
 
@@ -387,7 +387,7 @@ if __name__ == '__main__':
                 file_path,
                 idx,
                 stats_output_dir,
-                heatmap_output_dir,
+                order_map_output_dir,  # 修改参数
                 waveforms_output_dir
             )
 
@@ -453,8 +453,8 @@ if __name__ == '__main__':
     print(f"  Average per file: {total_time / len(csv_files):.2f} sec\n" if csv_files else "")
     print(f"Output directories:")
     print(f"  Base: {output_base_dir}")
-    print(f"  Heatmaps: {heatmap_output_dir}")
+    print(f"  Order maps: {order_map_output_dir}")  # 修改输出信息
     print(f"  Waveforms: {waveforms_output_dir}")
-print(f"  Statistics: {stats_output_dir}")
-print(f"\nAnalysis completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print("=" * 70)
+    print(f"  Statistics: {stats_output_dir}")
+    print(f"\nAnalysis completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 70)
